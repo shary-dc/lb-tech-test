@@ -15,27 +15,26 @@ TradeData AS (
         , t.server_hash
         , t.symbol
         , eu.currency
-        , t.volume
-        , t.close_time
-        , COUNT(*) OVER (PARTITION BY t.login_hash, t.server_hash, t.symbol ORDER BY t.close_time) AS trade_count
-        , SUM(t.volume) OVER (PARTITION BY t.login_hash, t.server_hash, t.symbol ORDER BY t.close_time) AS cumulative_volume
+        , SUM(t.volume) AS volume
+        , MAX(t.close_time) AS close_time
     FROM trades t
     INNER JOIN ExistingUsers eu ON t.login_hash = eu.login_hash
     WHERE (t.symbol ~ '[a-zA-Z0-9]'
         AND t.volume > 0)
+    GROUP BY t.close_time::date, t.login_hash, t.server_hash, t.symbol, eu.currency
 ),
 AllTradeData AS (
     SELECT
-          ad.dt_report
-        , td.login_hash
-        , td.server_hash
-        , td.symbol
-        , td.currency
-        , COALESCE(td.volume, 0) AS volume
-        , td.close_time
+          ad.dt_report,
+          td.login_hash,
+          td.server_hash,
+          td.symbol,
+          td.currency,
+          COALESCE(td.volume, 0) AS volume,
+          td.close_time
     FROM AllDates ad
-    LEFT JOIN TradeData td ON ad.dt_report = td.dt_report
-    ORDER BY ad.dt_report
+    LEFT JOIN TradeData td
+    ON ad.dt_report = td.dt_report
 ),
 TradeCalculations AS (
     SELECT
@@ -58,7 +57,7 @@ TradeCalculations AS (
 RankedData AS (
     SELECT
           *
-        , DENSE_RANK() OVER (PARTITION BY symbol ORDER BY sum_volume_prev_7d DESC) AS rank_volume_symbol_prev_7d
+        , DENSE_RANK() OVER (PARTITION BY login_hash, symbol ORDER BY sum_volume_prev_7d DESC) AS rank_volume_symbol_prev_7d
         , DENSE_RANK() OVER (PARTITION BY login_hash ORDER BY trade_count) AS rank_count_prev_7d
     FROM TradeCalculations
 )
